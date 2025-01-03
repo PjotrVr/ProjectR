@@ -1,34 +1,12 @@
-import torch
 import random
 import numpy as np
-import torch.nn as nn
 import matplotlib.pyplot as plt
 
-np.random.seed(0)
-random.seed(0)
-torch.manual_seed(0)
-
-
-class GaussianMixture2DDataset:
-    def __init__(
-        self,
-        num_samples,
-        n_comp=2,
-        loc=torch.zeros(2, 2),
-        scale=torch.ones(2, 2),
-        pi=(torch.ones(2) / 2),
-    ):
-        samples_per_component = (pi * num_samples).long()
-        self.samples = torch.cat(
-            [
-                torch.randn(samples_per_component[i], 2) * scale[i] + loc[i]
-                for i in range(n_comp)
-            ],
-            0,
-        )
-
-    def __getitem__(self, idx):
-        return self.samples[idx]
+import torch
+import torch.nn as nn
+from torchvision.datasets import MNIST
+import torchvision.transforms as tf
+from torch.utils.data import DataLoader, Subset
 
 
 class _Bijection(nn.Module):
@@ -62,7 +40,7 @@ class BijectiveLinear(_Bijection):
         return z, log_abs_det  # shapes NxD, N
 
     def inverse(self, z):
-        x = (z - self.bias) @ torch.linalg.inv(self.weight)
+        x = (z - self.bias) @ self.weight.inverse()
         return x  # NxD
 
     def regularization(self):
@@ -81,6 +59,13 @@ class NormalizingFlow(nn.Module):
         self.register_buffer("loc", torch.zeros(input_dim))
         self.register_buffer("log_scale", torch.zeros(input_dim))
         self.base_dist = torch.distributions.Normal(self.loc, torch.exp(self.log_scale))
+
+    def _get_base_dist_on_device(self, device):
+        if self.base_dist.loc.device != device:
+            self.base_dist = torch.distributions.Normal(
+                self.loc.to(device), torch.exp(self.log_scale.to(device))
+            )
+        return self.base_dist
 
     def forward(self, x):
         """Transforms the input sample to the latent representation z.
@@ -122,9 +107,10 @@ class NormalizingFlow(nn.Module):
         if len(x.shape) < 2:
             x = x.unsqueeze(0)  # add batch dim
 
+        self._get_base_dist_on_device(x.device)
         N = x.shape[0]
         z = x
-        log_abs_det = torch.zeros(N)
+        log_abs_det = torch.zeros(N).to(x.device)
         for t in self.transforms:
             z, log_abs_deti = t.forward(z)
             log_abs_det += log_abs_deti
@@ -188,19 +174,12 @@ class SimpleTransform(nn.Module):
             1) t = 0
             2) exp(log_s) = 1 => log_s = 0
         So we can actually just set the last layer w *= 0, b *= 0.
-        For stability, it might also be a good idea to set previous layers to smaller values.
-        Not sure if this is a good idea.
+        TODO: Understand why we have to zero out all weights and biases for network to be stable.
         """
-        with torch.no_grad():
-            """
-            for layer in model:
-                if isinstance(layer, nn.Linear):
-                    layer.weight *= 0.01 
-                    layer.bias *= 0
-            """
-            last_linear_layer = self.model[-1]
-            last_linear_layer.weight *= 0
-            last_linear_layer.bias *= 0
+        for layer in self.model:
+            if isinstance(layer, nn.Linear):
+                layer.weight.zero_()
+                layer.bias.zero_()
 
     def forward(self, x):
         out = self.model(x)
@@ -269,3 +248,61 @@ class SimpleRealNVP(NormalizingFlow):
             if i != num_steps - 1:
                 transforms.append(SwitchSides())
         super(SimpleRealNVP, self).__init__(transforms, input_dim)
+
+
+class ResidualBlock(nn.Module):
+    def __init__(self, dim, use_bn=False):
+        super(ResidualBlock, self).__init__()
+
+        self.layers = nn.Sequential()
+        self.layers.append(nn.Linear(dim, dim))
+        if use_bn:
+            self.layers.append(nn.BatchNorm1d(dim))
+        self.layers.append(nn.ReLU())
+        self.layers.append(nn.Linear(dim, dim))
+        self.f_relu = nn.ReLU()
+
+    def forward(self, x):
+        identity = x
+        out = self.layers(x)
+        out = out + identity
+        return self.f_relu(out)
+
+
+class SimpleResidualTransform(nn.Module):
+    def __init__(self, dim_in, dim_out, inflate_coef=1):
+        super(SimpleResidualTransform, self).__init__()
+        self.dim_in = dim_in
+        self.dim_out = dim_out
+        internal_dim = int(dim_in * inflate_coef)
+
+        self.model = nn.Sequential(
+            nn.Linear(dim_in, internal_dim),
+            nn.ReLU(),
+            ResidualBlock(internal_dim, use_bn=False),
+            nn.Linear(internal_dim, dim_out * 2),
+        )
+
+        for layer in self.model:
+            if isinstance(layer, nn.Linear):
+                layer.weight.zero_()
+                layer.bias.zero_()
+
+    def forward(self, x):
+        out = self.model(x)
+        log_s, t = torch.chunk(out, dim=1, chunks=2)
+        return log_s, t
+
+
+class RealNVP(NormalizingFlow):
+    def __init__(self, input_dim, num_steps=2):
+        transforms = nn.Sequential()
+        for i in range(num_steps):
+            dim_in = input_dim // 2
+            transforms.append(
+                AffineCouplingLayer(SimpleResidualTransform(dim_in, input_dim - dim_in))
+            )
+            if i != num_steps - 1:
+                transforms.append(SwitchSides())
+
+        super(RealNVP, self).__init__(transforms, input_dim)
