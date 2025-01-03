@@ -6,7 +6,7 @@
 
 - **Mihovil Mađerić** ([Mihovil13](https://github.com/Mihovil13))
 - **Petar Štika** ([PjotrVr](https://github.com/PjotrVr))
-- **Fran Marijan**
+- **Fran Marijan** ([FranMarijan](https://github.com/FranMarijan))
 
 ### Project Mentors
 
