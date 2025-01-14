@@ -127,6 +127,21 @@ def eval_perf_binary(Y, Y_):
 
   
 def eval_perf_multi(Y, Y_):
+    """
+    Evaluate performance of multiclass classification
+
+    Parameters
+    ----------
+        Y: predicted class indices, np.array of shape Nx1
+        Y_: ground truth indices, np.array of shape Nx1
+
+    Returns
+    -------
+        M: confusion_matrix
+        accuracy, precision, recall: metrics
+
+    """
+    
     Y_ = Y_.reshape(-1)
     Y = Y.reshape(-1)
     num_classes = np.max(Y_) + 1
@@ -135,10 +150,10 @@ def eval_perf_multi(Y, Y_):
         M[y_][y] += 1
 
     accuracy = np.trace(M) / np.sum(M)
-    precision = np.diag(M) / np.sum(M, axis=0)
-    recall = np.diag(M) / np.sum(M, axis=1)
+    precision = np.divide(np.diag(M), np.sum(M, axis=0), where=np.sum(M, axis=0) != 0)
+    recall = np.divide(np.diag(M), np.sum(M, axis=1), where=np.sum(M, axis=1) != 0)
 
-    return M, accuracy, recall, precision
+    return M.astype(np.int32), accuracy, recall, precision
 
 def eval_AP(ranked_labels):
   """Recovers AP from ranked labels"""

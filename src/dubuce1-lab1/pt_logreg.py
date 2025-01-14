@@ -16,7 +16,7 @@ class PTLogreg(nn.Module):
         # imena mogu biti self.W, self.b
         # ...
         super().__init__()
-        self.W = nn.Parameter(torch.tensor(np.random.randn(D, C), dtype=torch.float32))
+        self.W = nn.Parameter(torch.randn(D, C), dtype=torch.float32)
         self.b = nn.Parameter(torch.zeros(C))
 
     def forward(self, X):
@@ -87,6 +87,7 @@ def logreg_decfun(model):
 if __name__ == "__main__":
     # inicijaliziraj generatore slučajnih brojeva
     np.random.seed(100)
+    torch.manual_seed(100)
 
     # instanciraj podatke X i labele Yoh_
     X, Y_ = data.sample_gauss_2d(3, 100)

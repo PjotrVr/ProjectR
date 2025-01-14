@@ -11,7 +11,7 @@ class PTDeep(nn.Module):
         self.activation = activation()
         self.params = nn.ParameterDict()
         for i, (in_dim, out_dim) in enumerate(zip(layers, layers[1:])):
-            self.params[f"W{i}"] = nn.Parameter(torch.tensor(np.random.randn(in_dim, out_dim), dtype=torch.float32))
+            self.params[f"W{i}"] = nn.Parameter(torch.randn((in_dim, out_dim), dtype=torch.float32))
             self.params[f"b{i}"] = nn.Parameter(torch.zeros(out_dim))
 
     def forward(self, X):
@@ -43,7 +43,7 @@ def train(model, X, Yoh_, param_niter, param_delta, param_lambda=0.0):
         - param_niter: number of training iterations
         - param_delta: learning rate
     """
-
+    torch.manual_seed(100)
     # inicijalizacija optimizatora
     # ...
     optimizer = optim.SGD(model.parameters(), lr=param_delta)
@@ -88,6 +88,7 @@ def deep_decfun(model):
 
 if __name__ == "__main__":
     np.random.seed(100)
+    torch.manual_seed(100)
     #X, Y_ = data.sample_gauss_2d(3, 100)
     #X, Y_ = data.sample_gmm_2d(4, 2, 40)
     X, Y_ = data.sample_gmm_2d(6, 2, 10)
