@@ -1,6 +1,4 @@
 import numpy as np
-import matplotlib.pyplot as plt
-from matplotlib.patches import Ellipse
 from scipy.stats import norm, multivariate_normal
 
 from dists import GMDist, sample_gauss_2d
